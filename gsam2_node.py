@@ -11,6 +11,7 @@ from sensor_msgs.msg import RegionOfInterest, Image
 from cv_bridge import CvBridge, CvBridgeError
 import time
 from typing import Tuple, List
+from custom_interfaces.msg import GroundedSam
 
 class GS2_ROS_Wrapper(Node):
     """ROS2 wrapper for Grounded SAM 2 model."""
@@ -97,11 +98,12 @@ class GS2_ROS_Wrapper(Node):
             10
         )
         
-        self.mask_pub = self.create_publisher(
-            Image,
-            'grounded_sam2/segmentation_mask',
+        self.detection_pub = self.create_publisher(
+            GroundedSam,
+            'grounded_sam2/detections',
             10
         )
+        
         self.vis_pub = self.create_publisher(
             Image,
             'grounded_sam2/visualization',
@@ -265,18 +267,23 @@ class GS2_ROS_Wrapper(Node):
     def _publish_results(self, label_image: np.ndarray, orig_shape: Tuple[int, int], 
                         rgb_header, image: np.ndarray, bboxes_ros: List[RegionOfInterest], 
                         class_names: List[str], confidences: List[float]) -> None:
-        """Publish segmentation mask and visualization."""
-        # Publish segmentation mask
-        label_image = cv2.resize(label_image, orig_shape)
-        mask_image = self.bridge.cv2_to_imgmsg(label_image, encoding="16SC1", header=rgb_header)
-        self.mask_pub.publish(mask_image)
+        """Publish detection results using GroundedSam message."""
+        detection_msg = GroundedSam()
+        detection_msg.header = rgb_header
+        detection_msg.source_image = self.bridge.cv2_to_imgmsg(image, encoding="rgb8")
+        detection_msg.source_image.header = rgb_header
+        detection_msg.label_image = self.bridge.cv2_to_imgmsg(label_image, encoding="16SC1")
+        detection_msg.label_image.header = rgb_header
+        detection_msg.class_names = class_names
+        detection_msg.confidences = confidences
+        detection_msg.boxes = bboxes_ros
         
-        # Create visualization
+        self.detection_pub.publish(detection_msg)
+        
         vis_image = self._create_visualization(image, label_image, bboxes_ros, 
                                              class_names, confidences)
-        
-        # Publish visualization
-        vis_msg = self.bridge.cv2_to_imgmsg(vis_image, encoding="rgb8", header=rgb_header)
+        vis_msg = self.bridge.cv2_to_imgmsg(vis_image, encoding="rgb8")
+        vis_msg.header = rgb_header
         self.vis_pub.publish(vis_msg)
 
     def _create_visualization(self, image: np.ndarray, label_image: np.ndarray, 
