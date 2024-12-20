@@ -110,6 +110,13 @@ class GS2_ROS_Wrapper(Node):
             10
         )
 
+        # Add publisher for binary mask image
+        self.mask_pub = self.create_publisher(
+            Image,
+            'grounded_sam2/mask',
+            10
+        )
+
     def image_callback(self, msg: Image) -> None:
         """
         Store the latest image in buffer.
@@ -286,6 +293,12 @@ class GS2_ROS_Wrapper(Node):
         vis_msg.header = rgb_header
         self.vis_pub.publish(vis_msg)
 
+        # Create and publish binary mask
+        binary_mask = self._create_binary_mask(label_image)
+        mask_msg = self.bridge.cv2_to_imgmsg(binary_mask, encoding="mono8")
+        mask_msg.header = rgb_header
+        self.mask_pub.publish(mask_msg)
+
     def _create_visualization(self, image: np.ndarray, label_image: np.ndarray, 
                             bboxes: List[RegionOfInterest], class_names: List[str], 
                             confidences: List[float]) -> np.ndarray:
@@ -310,6 +323,12 @@ class GS2_ROS_Wrapper(Node):
             vis_image[mask] = vis_image[mask] * 0.7 + np.array([0, 255, 0], dtype=np.uint8) * 0.3
         
         return vis_image
+
+    def _create_binary_mask(self, label_image: np.ndarray) -> np.ndarray:
+        """Create a binary mask where any detection is marked as white (255)."""
+        binary_mask = np.zeros_like(label_image, dtype=np.uint8)
+        binary_mask[label_image >= 0] = 255
+        return binary_mask
 
     def _log_statistics(self, timings: dict, class_names: List[str]) -> None:
         """Log timing statistics and detection results."""
